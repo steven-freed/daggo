@@ -4,7 +4,9 @@ import sys
 import glob
 import importlib
 import logging
+import subprocess
 import os
+from time import sleep
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -34,10 +36,7 @@ class DAGNode:
     def __rrshift__(self, downstream):
         self.set_upstream(downstream)
         return self
-    
-    def __ror__(self, other):
-        print('OR', self, other)
-        return self
+
 
 class DAG:
     def __init__(self, schedule, sinks):
@@ -47,9 +46,7 @@ class DAG:
         if type(sinks) != list:
             sinks = [sinks]
         topsort = self._topsort(sinks)
-        log.info(f'Topsort {[n.node_id for n in topsort]}')
         self.stream = self._parallelize(topsort)
-        log.info(f'Stream {self.stream}')
         Runner.run(self)
 
     def _parallelize(self, topsort):
@@ -102,6 +99,7 @@ class Runner:
     @staticmethod
     def watch():
         dag_files = {}
+        procqueue = []
         while True:
             files = glob.glob("*_dag.py")
             for f in files:
@@ -109,14 +107,18 @@ class Runner:
                     dag_files[f] = 0
                 new_time = os.stat(f).st_mtime
                 old_time = dag_files.get(f)
-                print(old_time, new_time)
-                if old_time < new_time:
+                if old_time < new_time and f[:-3] not in procqueue:
                     dag_files[f] = new_time
-                    log.info(f'EXEC file {f}')
-                    exec(open(f).read())
+                    log.info(f'EXEC {f}')
+                    mod = importlib.import_module(f[:-3])
+                    p = mp.Process(target=mod.main)
+                    procqueue.append(f[:-3])
+                    p.run()
+            sleep(10)
 
-watcher = threading.Thread(target=Runner.watch)
-watcher.start()
-watcher.join()
+if __name__ == '__main__':
+    watcher = threading.Thread(target=Runner.watch)
+    watcher.start()
+    watcher.join()
 
 
