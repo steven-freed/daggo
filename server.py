@@ -99,7 +99,6 @@ class Runner:
     @staticmethod
     def watch():
         dag_files = {}
-        procqueue = []
         while True:
             files = glob.glob("*_dag.py")
             for f in files:
@@ -107,12 +106,11 @@ class Runner:
                     dag_files[f] = 0
                 new_time = os.stat(f).st_mtime
                 old_time = dag_files.get(f)
-                if old_time < new_time and f[:-3] not in procqueue:
+                if old_time < new_time:
                     dag_files[f] = new_time
                     log.info(f'EXEC {f}')
                     mod = importlib.import_module(f[:-3])
                     p = mp.Process(target=mod.main)
-                    procqueue.append(f[:-3])
                     p.run()
             sleep(10)
 
