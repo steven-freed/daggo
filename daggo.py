@@ -11,14 +11,19 @@ from time import sleep
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-class DAGNode:
-    def __init__(self, node_id):
-        self.node_id = node_id
-        self.upstream = []
+'''
+if file mod-ed: update time, insert file name into dict for key time
+set schedule as datetime.datetime object
+'''
 
-    def __start__(self):
-        '''User should start job here'''
-        pass
+class DAGNode:
+    '''
+    min hr dom mon dow
+    '''
+    def __init__(self, identifier, callee, schedule=''):
+        self.identifier = identifier
+        self.callee = callee
+        self.upstream = []
 
     def set_upstream(self, nodes):
         try:
@@ -34,6 +39,17 @@ class DAGNode:
         return downstream
 
     def __rrshift__(self, downstream):
+        self.set_upstream(downstream)
+        return self
+
+    def __lshift__(self, downstream):
+        try:
+            [node.set_upstream(self) for node in downstream]
+        except:
+            downstream.set_upstream(self)
+        return downstream
+
+    def __lrshift__(self, downstream):
         self.set_upstream(downstream)
         return self
 
@@ -81,42 +97,41 @@ class DAG:
 
 class Runner:
 
+    dag_files = {}
+    
     @staticmethod
     def run(dag):
         for node_or_nodes in dag.stream:
             if type(node_or_nodes) == list:
                 for n in node_or_nodes:
-                    proc = mp.Process(target=n.__start__)
+                    proc = mp.Process(target=n.callee)
                     proc.start()
                 proc.join()
                 print()
             else:
-                proc = mp.Process(target=node_or_nodes.__start__)
+                proc = mp.Process(target=node_or_nodes.callee)
                 proc.start()
                 proc.join()
                 print()
     
     @staticmethod
     def watch():
-        dag_files = {}
         while True:
             files = glob.glob("*_dag.py")
             for f in files:
-                if not dag_files.get(f):
-                    dag_files[f] = 0
+                if not Runner.dag_files.get(f):
+                    Runner.dag_files[f] = 0
                 new_time = os.stat(f).st_mtime
-                old_time = dag_files.get(f)
+                old_time = Runner.dag_files.get(f)
                 if old_time < new_time:
-                    dag_files[f] = new_time
+                    Runner.dag_files[f] = new_time
                     log.info(f'EXEC {f}')
                     mod = importlib.import_module(f[:-3])
                     p = mp.Process(target=mod.main)
                     p.run()
-            sleep(10)
+            sleep(5)
 
 if __name__ == '__main__':
-    watcher = threading.Thread(target=Runner.watch)
+    watcher = mp.Process(target=Runner.watch)
     watcher.start()
     watcher.join()
-
-
