@@ -1,39 +1,65 @@
-import threading
 import multiprocessing as mp
-import sys
 import glob
 import importlib
 import logging
-import subprocess
+import datetime
 import os
 from time import sleep
+import pickle
+from typing import Type, Callable, Dict, List, Union, Tuple, Set
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-'''
-if file mod-ed: update time, insert file name into dict for key time
-set schedule as datetime.datetime object
-'''
 
 class DAGNode:
     '''
-    min hr dom mon dow
+    Base class for DAGNodes basic requirements
     '''
-    def __init__(self, identifier, callee, schedule=''):
+    def __init__(self, identifier: str, callee: Callable) -> None:
         self.identifier = identifier
         self.callee = callee
         self.downstream = []
 
-
 class DAG:
-    def __init__(self, schedule, jobs):
-        self.schedule = schedule
-        self.jobs = self.set_downstreams(jobs)
-        print(str(self))
-        Runner.run(self)
-    
-    def set_downstreams(self, jobs):
+    '''
+    DAG object for setting schedule, topological sort, configurations
+    and serializing for the DAG Runner
+    '''
+    def __init__(self, identifier: str, topsort: List[Union[DAGNode, List[DAGNode]]],
+                schedule: str = None,
+                min: int = None, hr: int = None, dom: int = None,
+                mon: int = None, dow: int = None) -> None:
+        self.identifier = identifier
+        self.schedule = self._set_schedule(schedule or (min, hr, dom, mon, dow))
+        self.date = self._set_date(self.schedule)
+        self.jobs = self._set_downstreams(topsort)
+        # serializes DAG object for Runner to read
+        try:
+            object_set = pickle.load(open('daggo.dat', 'rb'))
+        except:
+            object_set = set()
+            pickle.dump(object_set | {self}, open('daggo.dat', 'wb+'))
+
+    def _set_date(self, schedule: Tuple[int]) -> Dict[str, int]:
+        '''Parses tuple schedule to dict'''
+        return {
+            'min': schedule[0],
+            'hr':  schedule[1],
+            'dom': schedule[2],
+            'mon': schedule[3],
+            'dow': schedule[4]
+        }
+
+    def _set_schedule(self, schedule: Union[str, Tuple[int]]) -> Tuple[int]:
+        '''Parses schedule string or kwargs to cron tuple: (min, hr, dom, mon, dow)'''
+        try:
+            return tuple([int(metric) if metric != '*' else None for metric in schedule.split(' ')])
+        except:
+            return schedule
+
+    def _set_downstreams(self, jobs: List[Union[DAGNode, List[DAGNode]]]
+                        ) -> List[Union[DAGNode, List[DAGNode]]]:
         '''Sets downstream node pointers for all nodes in DAG'''
         n = 0
         for i in range(len(jobs) - 1):
@@ -51,7 +77,7 @@ class DAG:
                     jobs[i].downstream.append(jobs[n])
         return jobs
     
-    def __str__(self):
+    def __str__(self) -> str:
         dagstr = ''
         for j in self.jobs:
             try:
@@ -62,16 +88,38 @@ class DAG:
                 dagstr += f'{j.identifier}\n'
         return dagstr
 
-    def __iter__(self):
+    def __iter__(self) -> iter:
         return iter(self.jobs)
 
 
 class Runner:
 
-    dag_files = {}
-    
-    @staticmethod
-    def run(dag):
+    dags = set()
+
+    def __init__(self) -> None:
+        '''
+        Check for dat file, serializes all dag file DAG objects,
+        sets dags set class attribute
+        '''
+        self.check_dat()
+        self.serialize_dags()
+        self.dags = self.get_dat()
+        self.start_stop_watch()
+
+    def should_run(self, job_date: Dict[str, int]) -> bool:
+        today = datetime.datetime.now()
+        pydow = datetime.datetime.now().weekday()
+        cron_dow = (pydow + 1) % 7
+        if (job_date['min'] or today.minute) == today.minute and\
+            (job_date['hr'] or today.hour) == today.hour and\
+            (job_date['dom'] or today.day) == today.day and\
+            (job_date['mon'] or today.month) == today.month and\
+            (job_date['dow'] or cron_dow) == cron_dow:
+            return True
+        else:
+            return False
+
+    def run(self, dag: DAGNode) -> None:
         for node_or_nodes in dag:
             try: # iterable
                 for n in node_or_nodes:
@@ -85,24 +133,32 @@ class Runner:
                 proc.join()
                 print()
     
-    @staticmethod
-    def watch():
+    def check_dat(self) -> None:
+        '''Creates dat file if not exists'''
+        open('daggo.dat', 'wb+')
+    
+    def get_dat(self) -> Set[DAGNode]:
+        '''Reads dat file'''
+        try:
+            dags = pickle.load(open('daggo.dat', 'rb'))
+        except:
+            return None
+        return dags
+
+    def serialize_dags(self) -> None:
+        '''Serializes DAG object for dag files'''
+        self.check_dat()
+        files = glob.glob("*_dag.py")
+        for f in files:
+            mod = importlib.import_module(f[:-3])
+            mod.main()
+
+    def start_stop_watch(self) -> None:
+        '''Watches dag objects date attribute for when to run DAG'''
         while True:
-            files = glob.glob("*_dag.py")
-            for f in files:
-                if not Runner.dag_files.get(f):
-                    Runner.dag_files[f] = 0
-                new_time = os.stat(f).st_mtime
-                old_time = Runner.dag_files.get(f)
-                if old_time < new_time:
-                    Runner.dag_files[f] = new_time
-                    #log.info(f'EXEC {f}')
-                    mod = importlib.import_module(f[:-3])
-                    p = mp.Process(target=mod.main)
-                    p.run()
-            sleep(5)
+            for dag in self.dags:
+                if self.should_run(dag.date):
+                    self.run(dag)
 
 if __name__ == '__main__':
-    watcher = mp.Process(target=Runner.watch)
-    watcher.start()
-    watcher.join()
+    runner = Runner()

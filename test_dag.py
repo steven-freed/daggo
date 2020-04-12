@@ -17,7 +17,4 @@ def main():
     d = DAGNode('d', task)
     e = DAGNode('e', task)
     f = DAGNode('f', task)
-    dag = DAG('my schedge', [a, (b, c), (d, e,), f]) 
-
-if __name__ == '__main__':
-    main()
+    dag = DAG('dgd', [a, (b, c), (d, e,), f], min=17) 
