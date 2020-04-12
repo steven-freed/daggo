@@ -23,76 +23,47 @@ class DAGNode:
     def __init__(self, identifier, callee, schedule=''):
         self.identifier = identifier
         self.callee = callee
-        self.upstream = []
-
-    def set_upstream(self, nodes):
-        try:
-            self.upstream = list(nodes)
-        except TypeError:
-            self.upstream = [nodes]
-
-    def __rshift__(self, downstream):
-        try:
-            [node.set_upstream(self) for node in downstream]
-        except:
-            downstream.set_upstream(self)
-        return downstream
-
-    def __rrshift__(self, downstream):
-        self.set_upstream(downstream)
-        return self
-
-    def __lshift__(self, downstream):
-        try:
-            [node.set_upstream(self) for node in downstream]
-        except:
-            downstream.set_upstream(self)
-        return downstream
-
-    def __lrshift__(self, downstream):
-        self.set_upstream(downstream)
-        return self
+        self.downstream = []
 
 
 class DAG:
-    def __init__(self, schedule, sinks):
+    def __init__(self, schedule, jobs):
         self.schedule = schedule
-        self.dag_nodes = []
-        self.stream = []
-        if type(sinks) != list:
-            sinks = [sinks]
-        topsort = self._topsort(sinks)
-        self.stream = self._parallelize(topsort)
+        self.jobs = self.set_downstreams(jobs)
+        print(str(self))
         Runner.run(self)
+    
+    def set_downstreams(self, jobs):
+        '''Sets downstream node pointers for all nodes in DAG'''
+        n = 0
+        for i in range(len(jobs) - 1):
+            if n + 1 < len(jobs): n += 1
+            try:
+                for j in range(len(jobs[i])):
+                    try:
+                        jobs[i][j].downstream += list(jobs[n])
+                    except:
+                        jobs[i][j].downstream.append(jobs[n])
+            except:
+                try:
+                    jobs[i].downstream += jobs[n]
+                except:
+                    jobs[i].downstream.append(jobs[n])
+        return jobs
+    
+    def __str__(self):
+        dagstr = ''
+        for j in self.jobs:
+            try:
+                for i in j:
+                    dagstr += f'{i.identifier}, '
+                dagstr = dagstr[:-2] + '\n'
+            except:
+                dagstr += f'{j.identifier}\n'
+        return dagstr
 
-    def _parallelize(self, topsort):
-        i = 0
-        sched = [-1] * len(topsort)
-        sched[0] = [topsort[0]]
-        deps = topsort[0].upstream
-        for node in topsort[1:]:
-            if node.upstream == deps:
-                sched[i].append(node)
-            else:
-                i += 1
-                deps = node.upstream
-                sched[i] = [node]
-        return sched[:sched.index(-1)]
-
-    def _topsort(self, sinks):
-        def visit_upstream(node, visited, stack):
-            visited[node] = True
-            for n in node.upstream:
-                if not visited.get(n):
-                    visit_upstream(n, visited, stack)
-            stack.append(node)
-
-        visited = dict.fromkeys(sinks, False)
-        stack = []
-        for node in sinks:
-            if not visited[node]:
-                visit_upstream(node, visited, stack)
-        return stack
+    def __iter__(self):
+        return iter(self.jobs)
 
 
 class Runner:
@@ -101,14 +72,14 @@ class Runner:
     
     @staticmethod
     def run(dag):
-        for node_or_nodes in dag.stream:
-            if type(node_or_nodes) == list:
+        for node_or_nodes in dag:
+            try: # iterable
                 for n in node_or_nodes:
                     proc = mp.Process(target=n.callee)
                     proc.start()
                 proc.join()
                 print()
-            else:
+            except: # non-iterable
                 proc = mp.Process(target=node_or_nodes.callee)
                 proc.start()
                 proc.join()
@@ -125,7 +96,7 @@ class Runner:
                 old_time = Runner.dag_files.get(f)
                 if old_time < new_time:
                     Runner.dag_files[f] = new_time
-                    log.info(f'EXEC {f}')
+                    #log.info(f'EXEC {f}')
                     mod = importlib.import_module(f[:-3])
                     p = mp.Process(target=mod.main)
                     p.run()
