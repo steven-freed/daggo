@@ -16,14 +16,13 @@ def task():
     print(f'\tfile 1: Node running in process {os.getpid()}')
     sleep(5)
 
-def main():
-    a = DAGNode('a', task)
-    b = DAGNode('b', task)
-    c = DAGNode('c', task)
-    d = DAGNode('d', task)
-    e = DAGNode('e', task)
-    f = DAGNode('f', task)
-    dag = DAG('test_dag_id', [a, (b, c), (d, e,), f]) 
+a = DAGNode('a', task)
+b = DAGNode('b', task)
+c = DAGNode('c', task)
+d = DAGNode('d', task)
+e = DAGNode('e', task)
+f = DAGNode('f', task)
+dag = DAG('test_dag_id', [a, (b, c), (d, e,), f]) 
 ```
 
 ## Concepts
