@@ -9,11 +9,11 @@ Designed by developers, made for humans
 from time import sleep
 import os
 
-from daggo import DAGNode, DAG
+from daggo.dag import DAGNode, DAG
 
 
 def task():
-    log.info(f'\tfile 1: Node running in process {os.getpid()}')
+    print(f'\tfile 1: Node running in process {os.getpid()}')
     sleep(5)
 
 def main():
@@ -28,6 +28,8 @@ def main():
 
 ## Concepts
 ### DAG
+A DAG instance must be in global scope of your dag script, if declared inside a Callable (class or function)
+then the DAG will not be scheduled by daggo.
 ```py
 DAG(identifier: str, topsort: List[Union[DAGNode, List[DAGNode]]],
     schedule: str = None,
@@ -39,10 +41,10 @@ DAG(identifier: str, topsort: List[Union[DAGNode, List[DAGNode]]],
 Each DAG object requires a unique identifier so that you can locate your exact DAG.
 
 #### Topological Sort for a DAG
-DAG objects accept a topological sort of your dag nodes represented as an iterable (list, tuple, set, etc.).
+DAG objects accept a topological sort of your dag nodes represented as an ordered iterable (list or tuple).
 To run two or more dag nodes in parallel you must specify those dag nodes as an iterable (or optional ordering in the topological sort)
 ```py
-(a, b) or [a, b] or {a, b}
+(a, b) or [a, b]
 ```
 
 #### Scheduling a DAG
