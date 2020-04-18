@@ -52,7 +52,7 @@ DAG objects accept a topological sort of your dag nodes represented as an ordere
 Scheduling a DAG can be done by using the kwarg 'schedule' which is a cron job string
 ```py
 # runs dag the 5th minute of every hour, every day
-DAG('test_dag_id', [a, b, c], schedule='5 * * * *')
+DAG('test_dag_id', (a, b, c), schedule='5 * * * *')
 ```
 
 You may also use all or a subset of date time kwargs that follow cron expression standards:
