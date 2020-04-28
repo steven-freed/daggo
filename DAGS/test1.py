@@ -9,4 +9,4 @@ def task():
 a = DAGNode('a', task)
 b = DAGNode('b', task)
 c = DAGNode('c', task)
-dag = DAG('test2_daggo', ((a, b), c), min=45) 
+dag = DAG('test2_daggo', ((a, b), c), min=44)

@@ -1,5 +1,5 @@
 from os import getpid
-import multiprocessing as mp
+import multiprocessing
 import logging
 from collections.abc import Iterable
 from typing import Type, Callable, Dict, List, Union, Tuple, Set
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
 
-class Runner(mp.Process):
+class Runner(multiprocessing.Process):
     '''Runs all DAGNode processes in a DAG object'''
     def __init__(self, dag):
         super(Runner, self).__init__(name=dag.ident)
@@ -27,7 +27,7 @@ class Runner(mp.Process):
 
     def run_singleton_task(self, task):
         '''Runs single DAGNode'''
-        proc = mp.Process(target=task.task)
+        proc = multiprocessing.Process(target=task.task)
         proc.start()
         proc.join()
 
@@ -35,7 +35,7 @@ class Runner(mp.Process):
         '''Runs multiple DAGNodes in parallel'''
         running_tasks = []
         for task in tasks:
-            proc = mp.Process(target=task.task)
+            proc = multiprocessing.Process(target=task.task)
             proc.start()
             running_tasks.append(proc)
         [p.join() for p in running_tasks]
