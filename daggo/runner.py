@@ -27,7 +27,7 @@ class Runner(multiprocessing.Process):
 
     def run_singleton_task(self, task):
         '''Runs single DAGNode'''
-        proc = multiprocessing.Process(target=task.task)
+        proc = multiprocessing.Process(target=task.callee)
         proc.start()
         proc.join()
 
@@ -35,7 +35,7 @@ class Runner(multiprocessing.Process):
         '''Runs multiple DAGNodes in parallel'''
         running_tasks = []
         for task in tasks:
-            proc = multiprocessing.Process(target=task.task)
+            proc = multiprocessing.Process(target=task.callee)
             proc.start()
             running_tasks.append(proc)
         [p.join() for p in running_tasks]

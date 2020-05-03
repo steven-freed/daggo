@@ -1,19 +1,19 @@
 import datetime, logging
 from typing import Type, Callable, Dict, List, Union, Tuple, Set, TypeVar
 
+from nodes.dagnode import DAGNode
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
 
 
-class DAGNode:
-    '''
-    Base class for DAGNodes basic requirements
-    '''
-    def __init__(self, ident: str, task: Callable) -> None:
-        self.ident = ident
-        self.task = task
-        self.downstream = []
+'''Statuses'''
+__INACTIVE__ = 0
+__QUEUED__   = 1
+__PENDING__  = 2
+__RUNNING__  = 3
+__FAILED__   = 4
 
 
 class DAG:
@@ -21,25 +21,48 @@ class DAG:
     DAG object for setting schedule, topological sort, configurations
     and serializing for the DAG Runner
     '''
-    def __init__(self, ident: str, topsort,
-                schedule: str = None,
-                min: int = None, hr: int = None, dom: int = None,
-                mon: int = None, dow: int = None) -> None:
+    def __init__(self, ident: str, topsort, start_date=datetime.date.today(),
+                schedule: str = None, sched_delta=None,
+                enabled=True) -> None:
         self.ident = ident
-        self.cron = self._set_schedule(schedule or (min, hr, dom, mon, dow))
-        self.tasks = self._set_downstreams(topsort)
+        self.start_date = start_date
+        self.schedule = schedule or sched_delta
+        self.enabled = enabled
+        self._status = __INACTIVE__
+        self.tasks = self._setDownstreams(topsort)
         self.next_run_date = datetime.datetime.now()
-        self._set_next_run_date()
+        if enabled:
+            self._setNextRunDate()
 
-    def _set_next_run_date(self) -> None:
+    def _setNextRunDate(self) -> None:
+        if type(self.schedule) == str:
+            yr, min, hr, dom, mon = self._parseCron(self.schedule)
+            self.next_run_date = datetime.datetime(yr, mon, dom, hour=hr, minute=min)
+        elif isinstance(self.schedule, datetime.timedelta):
+            self.next_run_date = self.next_run_date + self.schedule
+        else:
+            raise Exception('Invalid Schedule')
+        self.next_run_date = self.next_run_date.replace(microsecond=0)
+
+    def _parseCron(self, cron):
+        # "min hr dom mon dow"
+        cron = cron.split(' ')
+        if len(cron) != 5: raise ValueError('Invalid Cron Schedule')
         now = datetime.datetime.now()
-        self.next_run_date = datetime.datetime(now.year,
-                                self.cron['mon'] or now.month,
-                                self.cron['dom'] or self._dow_to_dom(self.cron['dow']) or now.day,
-                                hour=self.cron['hr'] or now.hour,
-                                minute=self.cron['min'] or now.minute)
+        for i in range(len(cron)):
+            if cron[i] == '*':
+                cron[i] = 0
+            else:
+                cron[i] = int(cron[i])
+        yr = now.year
+        min = cron[0] or now.minute
+        hr = cron[1] or now.hour
+        pydow = self._toPydow(cron[4])
+        dom = cron[2] or self._dowToDom(pydow) or now.day
+        mon = cron[3] or now.month
+        return yr, min, hr, dom, mon
 
-    def _dow_to_dom(self, dow) -> int:
+    def _dowToDom(self, dow) -> int:
         now = datetime.datetime.now()
         try:
             dom = now.day
@@ -49,7 +72,7 @@ class DAG:
         except:
             return None
 
-    def _to_pydow(self, dow) -> int:
+    def _toPydow(self, dow) -> int:
         '''
         Cron:   0 - 6 = Sunday - Saturday
         Python: 0 - 6 = Monday - Sunday
@@ -59,50 +82,25 @@ class DAG:
         except:
             return None
 
-    def _set_schedule(self, schedule: Union[str, Tuple[int]]) -> Dict[str, int]:
-        '''Parses schedule string or kwargs to cron tuple: (min, hr, dom, mon, dow)'''
-        map = {
-            0: 'min',
-            1: 'hr',
-            2: 'dom',
-            3: 'mon',
-            4: 'dow'
-        }
-        cron = {}
-        try:
-            schedule = schedule.split(' ')
-        except:
-            pass
-
-        for i, metric in enumerate(schedule):
-            if metric == '*':
-                cron[map[i]] = None
-            elif map[i] == 'dow':
-                cron[map[i]] = self._to_pydow(metric)
-            else:
-                cron[map[i]] = metric
-        return cron
-
-    def _set_downstreams(self, jobs):
+    def _setDownstreams(self, topsort):
         '''Sets downstream node pointers for all nodes in DAG'''
+        def visit_parallel_nodes(i, n):
+            for j in range(len(topsort[i])):
+                try:
+                    topsort[i][j].downstream += list(topsort[n])
+                except:
+                    topsort[i][j].downstream.append(topsort[n])
         n = 0
-        for i in range(len(jobs) - 1):
-            if n + 1 < len(jobs): n += 1
+        for i in range(len(topsort) - 1):
+            if n + 1 < len(topsort): n += 1
             try:
-                for j in range(len(jobs[i])):
-                    try:
-                        jobs[i][j].downstream += list(jobs[n])
-                    except:
-                        jobs[i][j].downstream.append(jobs[n])
+                visit_parallel_nodes(i, n)
             except:
                 try:
-                    jobs[i].downstream += jobs[n]
+                    topsort[i].downstream += topsort[n]
                 except:
-                    jobs[i].downstream.append(jobs[n])
-        return jobs
-
-    def set_next_run_date(self):
-        pass
+                    topsort[i].downstream.append(topsort[n])
+        return topsort
     
     def __str__(self) -> str:
         dagstr = ''

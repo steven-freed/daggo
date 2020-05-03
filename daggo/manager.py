@@ -1,13 +1,13 @@
 from os import path, getpid
 from time import sleep
 import multiprocessing as mp
-import threading as mt
 from queue import Queue
+import threading as mt
 import glob, importlib, datetime, sys, copy, signal, logging
 from collections.abc import Iterable
 from typing import Type, Callable, Dict, List, Union, Tuple, Set
 
-import dag
+from dag import __FAILED__, __INACTIVE__, __PENDING__, __QUEUED__, __RUNNING__
 import pqueue
 from runner import Runner
 from bus import Bus
@@ -24,11 +24,14 @@ class Manager:
         sets dags set class attribute
         '''
         signal.signal(signal.SIGINT, lambda x,y:sys.exit(0))
+        self.db = {}
         self.dags = pqueue.PriorityQueue()
         self.tsq = Queue()
+        self.lock = mt.Lock()
         self.store_dags()
-        self.bus = Bus()
+        self.bus = Bus(self.lock, self.tsq, self.db, self.dags)
         self.bus.start()
+        self.printdb()
         self.seat_sections()
     
     def store_dags(self) -> None:
@@ -47,28 +50,35 @@ class Manager:
                     dag_from_file = pyobj
                 except:
                     continue
-            if dag_from_file:
+            if dag_from_file and dag_from_file.enabled:
+                with self.lock:
+                    dag_from_file.status = __QUEUED__
+                self.db[dag_from_file.ident] = dag_from_file
                 self.dags.enqueue(dag_from_file)
-    
-    def set_next_run(self, dag):
-        '''Sets DAGs next run date'''
-        pass
+
+    def printdb(self):
+        print('=========DB===========')
+        for ident, dag in self.db.items():
+            print(f'DAG: {ident} Next Run: {dag.next_run_date} Status: {dag.status}')
+        print('======================')
+        mt.Timer(1.0, self.printdb).start()
 
     def seat_sections(self) -> None:
         '''Watches dag objects date attribute for when to run DAG'''
         while True: # TODO check for file modifications using C st_mtime
             dag = self.dags.dequeue()
-            if dag:
-                print('dequeued', dag.ident)
-                while dag and dag.next_run_date != datetime.datetime.now().replace(second=0, microsecond=0):
+            if dag and dag.enabled:
+                while dag and dag.next_run_date != datetime.datetime.now().replace(microsecond=0):
                     time_delta = dag.next_run_date - datetime.datetime.now()
+                    with self.lock:
+                        dag.status = __PENDING__
                     sleep(time_delta.seconds + 1)
+                with self.lock:
+                    dag.status = __RUNNING__
+                dag._setNextRunDate()
                 proc = Runner(dag)
-                self.set_next_run(dag)
-                print('running', dag.ident)
                 proc.start()
                 self.bus.tsq.put(proc)
-
 
 if __name__ == '__main__':
     # fixes python imports system path
